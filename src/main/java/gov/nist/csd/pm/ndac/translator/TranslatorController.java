@@ -101,7 +101,7 @@ public class TranslatorController {
     static class Response {
         private String sql;
 
-        public Response(String sql) {
+        Response(String sql) {
             this.sql = sql;
         }
 
