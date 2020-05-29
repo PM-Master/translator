@@ -1,26 +1,27 @@
 package gov.nist.csd.pm.ndac.translator;
 
 import gov.nist.csd.pm.exceptions.PMException;
+import gov.nist.csd.pm.ndac.translator.audit.AuditEntry;
 import gov.nist.csd.pm.pdp.PDP;
 import gov.nist.csd.pm.pdp.services.UserContext;
 import ndac.NDACEngine;
 import net.sf.jsqlparser.JSQLParserException;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+
 @RestController
 @RequestMapping("/translate")
 public class TranslatorController {
 
     private NDACEngine ndacEngine;
-    private String schema;
+    private List<AuditEntry> auditLog;
 
-    public TranslatorController(PDP pdp) throws PMException {
-        ndacEngine = new NDACEngine(pdp, new NDACEngine.Options(false, true));
-    }
-
-    @PutMapping("/schema/{schema}")
-    public void setSchema(@PathVariable String schema) {
-        this.schema = schema;
+    public TranslatorController(PDP pdp, List<AuditEntry> auditLog) throws PMException {
+        this.ndacEngine = new NDACEngine(pdp, new NDACEngine.Options(false, true));
+        this.auditLog = auditLog;
     }
 
     /**
@@ -33,6 +34,8 @@ public class TranslatorController {
      */
     @PostMapping
     public Response translate(@RequestBody Request request) throws PMException, JSQLParserException {
+        Instant start = Instant.now();
+
         String sql = request.getSql();
         if (!sql.startsWith("/*!")) {
             throw new PMException("must provide user in query comment (/*!user=<username>*/select * from ...)");
@@ -41,6 +44,7 @@ public class TranslatorController {
         // extract user and process information
         String user = null;
         String process = null;
+        // user and process will be in the comment with the format: /*!user=<user> process=<process>*/
         String[] pieces = sql.split("/\\*!|\\*//*");
         if(pieces.length > 1) {
             String[] properties = pieces[1].split(" ");
@@ -59,14 +63,33 @@ public class TranslatorController {
         }
 
         // translate the sql
-        sql = ndacEngine.translate(new UserContext(user, process), this.schema, sql);
-        return new Response(sql);
+        UserContext userCtx = new UserContext(user, process);
+        String permittedSql = ndacEngine.translate(userCtx, request.getSchema(), sql);
+
+        // end the timer and calculate the time elapsed
+        Instant end = Instant.now();
+        double time = (double) (Duration.between(start, end).toNanos()/1000000000);
+
+        // log the translation
+        auditLog.add(new AuditEntry(userCtx, sql, permittedSql, time));
+
+        // return the permitted sql
+        return new Response(permittedSql);
     }
 
     static class Request {
+        private String schema;
         private String sql;
 
-        public String getSql() {
+        String getSchema() {
+            return schema;
+        }
+
+        public void setSchema(String schema) {
+            this.schema = schema;
+        }
+
+        String getSql() {
             return sql;
         }
 
