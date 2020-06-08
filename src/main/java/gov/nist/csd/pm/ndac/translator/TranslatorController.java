@@ -2,6 +2,7 @@ package gov.nist.csd.pm.ndac.translator;
 
 import gov.nist.csd.pm.exceptions.PMException;
 import gov.nist.csd.pm.ndac.translator.audit.AuditEntry;
+import gov.nist.csd.pm.pap.PAP;
 import gov.nist.csd.pm.pdp.PDP;
 import gov.nist.csd.pm.pdp.services.UserContext;
 import ndac.NDACEngine;
@@ -19,8 +20,8 @@ public class TranslatorController {
     private NDACEngine ndacEngine;
     private List<AuditEntry> auditLog;
 
-    public TranslatorController(PDP pdp, List<AuditEntry> auditLog) throws PMException {
-        this.ndacEngine = new NDACEngine(pdp, new NDACEngine.Options(false, true));
+    public TranslatorController(PAP pap, List<AuditEntry> auditLog) throws PMException {
+        this.ndacEngine = new NDACEngine(pap, new NDACEngine.Options(false, NDACEngine.Mode.RELAXED));
         this.auditLog = auditLog;
     }
 
@@ -34,7 +35,7 @@ public class TranslatorController {
      */
     @PostMapping
     public Response translate(@RequestBody Request request) throws PMException, JSQLParserException {
-        Instant start = Instant.now();
+        long start = System.nanoTime();
 
         String sql = request.getSql();
         if (!sql.startsWith("/*!")) {
@@ -67,8 +68,7 @@ public class TranslatorController {
         String permittedSql = ndacEngine.translate(userCtx, request.getSchema(), sql);
 
         // end the timer and calculate the time elapsed
-        Instant end = Instant.now();
-        double time = (double) (Duration.between(start, end).toNanos()/1000000000);
+        double time = (double)(System.nanoTime()-start)/1000000000;
 
         // log the translation
         auditLog.add(new AuditEntry(userCtx, sql, permittedSql, time));
